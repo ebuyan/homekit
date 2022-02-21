@@ -1,0 +1,22 @@
+[Unit]
+Description=homekit
+ConditionPathExists=/opt/homekit/homekit
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+WorkingDirectory=/opt/homekit
+ExecStart=/opt/homekit/homekit
+StandardError=append:/var/log/homekit/app.log
+
+Restart=on-failure
+RestartSec=10
+
+ExecStartPre=/bin/chown syslog:adm /var/log/homekit
+ExecStartPre=/bin/chmod 775 /opt/homekit/homekit
+
+[Install]
+WantedBy=multi-user.target
