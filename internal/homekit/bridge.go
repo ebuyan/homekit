@@ -1,6 +1,7 @@
 package homekit
 
 import (
+	"fmt"
 	"github.com/brutella/hc"
 	"github.com/brutella/hc/accessory"
 	"homekit/internal/openhab"
@@ -55,7 +56,7 @@ func (b Bridge) GetAccessories() (acs []*accessory.Accessory, err error) {
 			id = uint64(key) + 2
 			b.store.SetId(id, item.Name)
 		}
-		log.Println("building item " + item.Name + " type " + item.Type)
+		log.Println(fmt.Sprintf("building item %s type %s", item.Name, item.Type))
 		if ac := b.factory.Build(item, id); ac != nil {
 			acs = append(acs, ac)
 		}

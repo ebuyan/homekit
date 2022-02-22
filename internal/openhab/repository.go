@@ -42,26 +42,28 @@ func (r *Repository) GetItem(label string) (items openhabcli.Item, err error) {
 }
 
 func (r *Repository) SetItemState(val bool, item openhabcli.Item) {
-	r.Lock()
 	r.client.SetState(r.config.GetCredentials(), item.Name, helper.BoolToString(val))
-	r.items, _, _ = r.client.GetAllItemsByTag(r.config.GetCredentials(), r.config.searchTag)
-	r.Unlock()
+	r.initItems()
 }
 
 func (r *Repository) loadItems() {
 	go func() {
 		for {
-			r.Lock()
 			prevCount := len(r.items)
-			r.items, _, _ = r.client.GetAllItemsByTag(r.config.GetCredentials(), r.config.searchTag)
+			r.initItems()
 			curCount := len(r.items)
-			r.Unlock()
 			if prevCount != 0 && prevCount != curCount {
 				log.Fatalln("new items. reloading app")
 			}
 			select {
-			case <-time.After(5 * time.Second):
+			case <-time.After(10 * time.Second):
 			}
 		}
 	}()
+}
+
+func (r *Repository) initItems() {
+	r.Lock()
+	r.items, _, _ = r.client.GetAllItemsByTag(r.config.GetCredentials(), r.config.searchTag)
+	r.Unlock()
 }

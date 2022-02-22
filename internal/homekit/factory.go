@@ -2,7 +2,9 @@ package homekit
 
 import (
 	"github.com/brutella/hc/accessory"
+	"github.com/brutella/hc/characteristic"
 	openhabcli "github.com/ebuyan/ohyandex/pkg/openhab"
+	"homekit/internal/homekit/accessories"
 	"homekit/internal/openhab"
 	"homekit/internal/pkg/helper"
 	"log"
@@ -45,7 +47,7 @@ func (f AccessoryFactory) buildSwitch(item openhabcli.Item, id uint64) *accessor
 	ac := accessory.NewSwitch(info)
 	ac.Switch.On.SetValue(helper.StringToBool(item.State))
 	ac.Switch.On.OnValueRemoteUpdate(func(on bool) { f.repo.SetItemState(on, item) })
-	f.checkStateAndUpdateSwitch(ac)
+	go f.checkStateAndUpdateSwitch(ac.Switch.On, ac.Info.Name.GetValue())
 	return ac.Accessory
 }
 
@@ -54,115 +56,79 @@ func (f AccessoryFactory) buildLight(item openhabcli.Item, id uint64) *accessory
 	ac := accessory.NewLightbulb(info)
 	ac.Lightbulb.On.SetValue(helper.StringToBool(item.State))
 	ac.Lightbulb.On.OnValueRemoteUpdate(func(on bool) { f.repo.SetItemState(on, item) })
-	f.checkStateAndUpdateLight(ac)
+	go f.checkStateAndUpdateSwitch(ac.Lightbulb.On, ac.Info.Name.GetValue())
 	return ac.Accessory
 }
 
 func (f AccessoryFactory) buildGate(item openhabcli.Item, id uint64) *accessory.Accessory {
 	info := accessory.Info{Name: item.Label, ID: id}
-	ac := NewAccessoryGate(info)
+	ac := accessories.NewGate(info)
 	ac.GarageDoorOpener.CurrentDoorState.SetValue(1)
 	ac.GarageDoorOpener.TargetDoorState.SetValue(1)
 	ac.GarageDoorOpener.TargetDoorState.OnValueRemoteUpdate(func(on int) {
 		ac.GarageDoorOpener.CurrentDoorState.SetValue(on)
 		f.repo.SetItemState(true, item)
 	})
-	f.checkStateAndUpdateGate(ac)
+	go f.checkStateAndUpdateGate(ac)
 	return ac.Accessory
 }
 
 func (f AccessoryFactory) buildTemp(item openhabcli.Item, id uint64) *accessory.Accessory {
 	info := accessory.Info{Name: item.Label, ID: id}
 	ac := accessory.NewTemperatureSensor(info, helper.GetFloatFromTemperature(item.State), 10.0, 30.0, 0.1)
-	f.checkStateAndUpdateTemp(ac)
+	go f.checkStateAndUpdateTemp(ac)
 	return ac.Accessory
 }
 
 func (f AccessoryFactory) buildHum(item openhabcli.Item, id uint64) *accessory.Accessory {
 	info := accessory.Info{Name: item.Label, ID: id}
-	ac := NewAccessorySensorHumidity(info)
+	ac := accessories.NewSensorHumidity(info)
 	ac.HumiditySensor.CurrentRelativeHumidity.SetValue(helper.GetFloatFromHumidity(item.State))
-	f.checkStateAndUpdateHum(ac)
+	go f.checkStateAndUpdateHum(ac)
 	return ac.Accessory
 }
 
-func (f AccessoryFactory) checkStateAndUpdateSwitch(ac *accessory.Switch) {
-	go func() {
-		for {
-			val := helper.BoolToString(ac.Switch.On.GetValue())
-			item, err := f.repo.GetItem(ac.Info.Name.GetValue())
-			if err == nil && item.State != val {
-				ac.Switch.On.SetValue(helper.StringToBool(item.State))
-			}
-			select {
-			case <-time.After(1 * time.Second):
-			}
+func (f AccessoryFactory) checkStateAndUpdateSwitch(on *characteristic.On, itemName string) {
+	for {
+		item, err := f.repo.GetItem(itemName)
+		if err == nil && item.State != helper.BoolToString(on.GetValue()) {
+			on.SetValue(helper.StringToBool(item.State))
 		}
-	}()
+		select {
+		case <-time.After(1 * time.Second):
+		}
+	}
 }
 
-func (f AccessoryFactory) checkStateAndUpdateLight(ac *accessory.Lightbulb) {
-	go func() {
-		for {
-			val := helper.BoolToString(ac.Lightbulb.On.GetValue())
-			item, err := f.repo.GetItem(ac.Info.Name.GetValue())
-			if err == nil && item.State != val {
-				ac.Lightbulb.On.SetValue(helper.StringToBool(item.State))
-			}
-			select {
-			case <-time.After(1 * time.Second):
-			}
+func (f AccessoryFactory) checkStateAndUpdateGate(ac *accessories.Gate) {
+	for {
+		//пока нет состояния ворот, просто сетим "closed"
+		ac.GarageDoorOpener.CurrentDoorState.SetValue(1)
+		ac.GarageDoorOpener.TargetDoorState.SetValue(1)
+		select {
+		case <-time.After(20 * time.Second):
 		}
-	}()
-}
-
-func (f AccessoryFactory) checkStateAndUpdateGate(ac *AccessoryGate) {
-	go func() {
-		var gateTimeout = 0
-		var maxTimeout = 60 * 2
-		for {
-			if item, err := f.repo.GetItem(ac.Info.Name.GetValue()); err == nil {
-				if item.State == "ON" && gateTimeout == 0 {
-					gateTimeout = 1
-				}
-				if gateTimeout != 0 {
-					gateTimeout += 1
-				}
-				if gateTimeout > maxTimeout {
-					ac.GarageDoorOpener.CurrentDoorState.SetValue(1)
-					ac.GarageDoorOpener.TargetDoorState.SetValue(1)
-					gateTimeout = 0
-				}
-			}
-			select {
-			case <-time.After(1 * time.Second):
-			}
-		}
-	}()
+	}
 }
 
 func (f AccessoryFactory) checkStateAndUpdateTemp(ac *accessory.Thermometer) {
-	go func() {
-		for {
-			if item, err := f.repo.GetItem(ac.Info.Name.GetValue()); err == nil {
-				ac.TempSensor.CurrentTemperature.SetValue(helper.GetFloatFromTemperature(item.State))
-			}
-			select {
-			case <-time.After(60 * 5 * time.Second):
-			}
+	for {
+		if item, err := f.repo.GetItem(ac.Info.Name.GetValue()); err == nil {
+			ac.TempSensor.CurrentTemperature.SetValue(helper.GetFloatFromTemperature(item.State))
 		}
-	}()
+		select {
+		case <-time.After(60 * 5 * time.Second):
+		}
+	}
 }
 
-func (f AccessoryFactory) checkStateAndUpdateHum(ac *AccessorySensorHumidity) {
-	go func() {
-		for {
-			if item, err := f.repo.GetItem(ac.Info.Name.GetValue()); err == nil {
-				ac.HumiditySensor.CurrentRelativeHumidity.SetValue(helper.GetFloatFromHumidity(item.State))
-			}
-			select {
-			case <-time.After(60 * 5 * time.Second):
-			}
+func (f AccessoryFactory) checkStateAndUpdateHum(ac *accessories.SensorHumidity) {
+	for {
+		if item, err := f.repo.GetItem(ac.Info.Name.GetValue()); err == nil {
+			ac.HumiditySensor.CurrentRelativeHumidity.SetValue(helper.GetFloatFromHumidity(item.State))
 		}
-	}()
+		select {
+		case <-time.After(60 * 5 * time.Second):
+		}
+	}
 }
